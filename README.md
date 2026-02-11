@@ -1,6 +1,6 @@
 # Pseudo-LIDAR Frontal amb Arduino i Python
 
-Aquest projecte implementa un sistema de radar/pseudo-LIDAR frontal utilitzant un sensor ultrasònic HC-SR04 muntat sobre un servo estàndard, controlat per un Arduino Mega. Les dades es visualitzen en temps real en un PC mitjançant un script de Python optimitzat per a una visualització clara i neta.
+Aquest projecte implementa un sistema de radar/pseudo-LIDAR frontal d'alta precisió utilitzant un sensor ultrasònic HC-SR04 muntat sobre un servo estàndard, controlat per un Arduino Mega. Les dades es visualitzen en temps real en un PC mitjançant un script de Python optimitzat.
 
 ## Estructura del Projecte
 
@@ -36,6 +36,8 @@ Aquest projecte implementa un sistema de radar/pseudo-LIDAR frontal utilitzant u
 3. Puja el codi a la placa.
 4. El servo començarà a escombrar automàticament.
 
+**Nota sobre el rendiment:** El firmware està configurat per prioritzar la **precisió** sobre la velocitat. L'escombrat serà més lent que en versions anteriors perquè fa múltiples lectures per posició per eliminar soroll.
+
 ### 2. Python (PC)
 
 1. Instal·la Python (si no el tens).
@@ -49,33 +51,25 @@ Aquest projecte implementa un sistema de radar/pseudo-LIDAR frontal utilitzant u
    python pc/radar.py
    ```
 
-## Configuració i Ajustos Visuals
+## Configuració i Visualització
 
-El radar està configurat per defecte per ser molt visual i net, ideal per interiors:
+El radar està configurat per defecte per ser molt visual i net:
+- **Rang visual:** Fins a 200 cm.
+- **Filtratge:** Ignora soroll (<15cm) i valors llunyans (>200cm).
+- **Zona Òptima:** Ressalta la franja de 50-120 cm.
+- **Gràfics:** Utilitza punts vermells clars sobre fons polar.
 
-- **Rang:** Mostra objectes fins a **200 cm**.
-- **Filtratge:** Ignora objectes a menys de **15 cm** (soroll) o a més de **200 cm**.
-- **Zona Òptima:** Ressalta una franja verda entre **50 cm i 120 cm** per identificar ràpidament objectes a distància de treball.
-- **Visualització:** Utilitza punts grans i vermells sense línies ni farcits per evitar confusions.
+### Personalització Tècnica (Arduino)
 
-### Personalització
-
-Pots editar `pc/radar.py` per canviar aquests paràmetres:
-
-```python
-MAX_DISTANCE = 200    # Distància màxima visual (cm)
-MIN_VALID_DISTANCE = 15 # Filtratge de soroll proper
-ZONE_START = 50       # Inici zona verda
-ZONE_END = 120        # Final zona verda
-```
-
-### Sentit de Gir
-Si el radar a la pantalla es mou al revés del moviment físic del servo:
-- A `pc/radar.py`, canvia `ax.set_theta_direction(-1)` a `1` (o viceversa).
+A `arduino/lidar/lidar.ino` pots ajustar:
+- `SERVO_DELAY`: Temps d'espera mecànica (per defecte 60ms).
+- `READINGS_COUNT`: Nombre de lectures per fer la mediana (per defecte 5). Augmentar-ho millora la precisió però alenteix l'escombrat.
 
 ## Funcionament Tècnic
 
 1. **Escaneig:** L'Arduino mou el servo de 30° a 150° (sector frontal de -60° a +60°).
-2. **Mesura:** Es calcula la distància amb la fórmula `distància = durada / 58` (cm).
-3. **Comunicació:** L'Arduino envia `angle,distància` via Sèrie a 115200 baudis.
-4. **Visualització:** Python filtra i dibuixa només els punts vàlids sobre un gràfic polar net.
+2. **Estabilització:** S'espera 60ms perquè el servo deixi de vibrar.
+3. **Multimostreig:** Es fan 5 lectures consecutives del sensor ultrasònic.
+4. **Filtratge:** Es calcula la mediana de les lectures per descartar valors erronis (outliers).
+5. **Comunicació:** S'envia `angle,distància_mediana` via Sèrie a 115200 baudis.
+6. **Visualització:** Python mostra les dades filtrades en un radar polar.
