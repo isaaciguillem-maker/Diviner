@@ -1,6 +1,6 @@
 # Pseudo-LIDAR Frontal amb Arduino i Python
 
-Aquest projecte implementa un sistema de radar/pseudo-LIDAR frontal utilitzant un sensor ultrasònic HC-SR04 muntat sobre un servo estàndard, controlat per un Arduino Mega. Les dades es visualitzen en temps real en un PC mitjançant un script de Python.
+Aquest projecte implementa un sistema de radar/pseudo-LIDAR frontal utilitzant un sensor ultrasònic HC-SR04 muntat sobre un servo estàndard, controlat per un Arduino Mega. Les dades es visualitzen en temps real en un PC mitjançant un script de Python optimitzat.
 
 ## Estructura del Projecte
 
@@ -49,15 +49,24 @@ Aquest projecte implementa un sistema de radar/pseudo-LIDAR frontal utilitzant u
    python pc/radar.py
    ```
 
-## Funcionament
+## Configuració i Ajustos
 
-1. **Escaneig:** L'Arduino mou el servo de 30° a 150° (corresponent a un angle frontal de -60° a +60°).
-2. **Mesura:** A cada pas de 5°, el sensor mesura la distància.
-3. **Comunicació:** L'Arduino envia les dades en format `angle,distància` pel port sèrie.
-4. **Visualització:** El PC rep les dades i actualitza un gràfic polar en temps real, mostrant els objectes detectats davant del sensor.
+### Resolució Angular
+Per defecte, l'escaneig es fa cada **5 graus**.
+Si vols canviar-ho (per exemple a 2 graus per més precisió o 10 per més velocitat):
+1. A `arduino/lidar/lidar.ino`: Canvia `const int STEP_ANGLE = 5;` pel valor desitjat.
+2. A `pc/radar.py`: Canvia `STEP_ANGLE = 5` pel mateix valor.
 
-## Personalització
+### Sentit de Gir
+Si el radar a la pantalla es mou al revés del moviment físic del servo:
+- A `pc/radar.py`, canvia `ax.set_theta_direction(-1)` a `1` (o viceversa).
 
-- **Angle d'escaneig:** Pots modificar els límits del bucle `for` a `lidar.ino`.
-- **Velocitat:** Pots canviar el `delay(50)` a `lidar.ino` per fer l'escaneig més ràpid o més lent (tingues en compte la velocitat del so).
-- **Visualització:** Pots ajustar `MAX_DISTANCE` a `radar.py` segons el rang que vulguis visualitzar.
+### Velocitat
+- El sistema està configurat amb un `delay` de 30ms per posició. Pots ajustar `SCAN_DELAY` a l'Arduino, però valors inferiors a 25ms poden causar lectures inestables del sensor ultrasònic.
+
+## Funcionament Tècnic
+
+1. **Escaneig:** L'Arduino mou el servo de 30° a 150° (sector frontal de -60° a +60°).
+2. **Mesura:** Es calcula la distància amb la fórmula `distància = durada / 58` (cm).
+3. **Comunicació:** L'Arduino envia `angle,distància` via Sèrie a 115200 baudis.
+4. **Visualització:** Python actualitza només els punts necessaris del gràfic polar per garantir un rendiment fluid sense parpelleig.

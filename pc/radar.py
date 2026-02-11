@@ -2,19 +2,23 @@ import serial
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.animation import FuncAnimation
-import time
 import sys
+import time
 
 # Configuració
-SERIAL_PORT = 'COM3'  # Canvia-ho pel teu port (ex: 'COM3' a Windows, '/dev/ttyUSB0' a Linux)
+SERIAL_PORT = 'COM3'  # Windows: COM3, Linux: /dev/ttyUSB0
 BAUD_RATE = 115200
 MAX_DISTANCE = 400    # Distància màxima del sensor en cm
+STEP_ANGLE = 5        # Pas angular (ha de coincidir amb l'Arduino)
+MIN_ANGLE = -60       # Angle lògic mínim
+MAX_ANGLE = 60        # Angle lògic màxim
 
 # Inicialització de dades
-# Angles d'escaneig: de -60 a +60 graus, cada 5 graus.
-angles_deg = np.arange(-60, 61, 5) # array([-60, -55, ..., 60])
-angles_rad = np.radians(angles_deg) # Convertim a radiants per matplotlib
-distances = np.full_like(angles_deg, MAX_DISTANCE, dtype=float) # Inicialitzem amb distància màxima
+angles_deg = np.arange(MIN_ANGLE, MAX_ANGLE + 1, STEP_ANGLE)
+angles_rad = np.radians(angles_deg)
+distances = np.full_like(angles_deg, MAX_DISTANCE, dtype=float)
+
+ser = None
 
 # Intentem connectar al port sèrie
 try:
@@ -23,77 +27,87 @@ try:
 except serial.SerialException:
     print(f"Error: No s'ha pogut obrir el port {SERIAL_PORT}.")
     print("Comprova que l'Arduino està connectat i el port és correcte.")
-    # Per proves sense Arduino, podem comentar la línia següent:
+    # Si volem provar sense Arduino, comentem la línia de sortida
     sys.exit(1)
 
-# Funció per llegir dades del port sèrie
-def update_data():
-    global distances
-    # Llegim totes les línies disponibles al buffer
-    while ser and ser.in_waiting > 0:
-        try:
-            line = ser.readline().decode('utf-8').strip()
-            if not line: continue
-
-            parts = line.split(',')
-            if len(parts) == 2:
-                angle = int(parts[0])
-                dist = int(parts[1])
-
-                # Filtre de distància
-                if dist > MAX_DISTANCE or dist <= 0:
-                    dist = MAX_DISTANCE
-
-                # Busquem l'índex corresponent a l'angle rebut
-                # L'angle ve de -60 a 60 en passos de 5.
-                # L'array angles_deg té valors [-60, -55, ..., 60]
-                idx = np.where(angles_deg == angle)[0]
-
-                if len(idx) > 0:
-                    distances[idx[0]] = dist
-
-        except ValueError:
-            pass # Ignorem línies malformades
-        except Exception as e:
-            print(f"Error llegint: {e}")
-
-# Funció d'animació
-def animate(i):
-    update_data()
-
-    ax.clear()
-
-    # Configuració del gràfic polar
-    ax.set_theta_zero_location("N") # 0 graus al Nord (Frontal)
-    ax.set_theta_direction(-1)      # Sentit horari (opcional, ajusta segons el teu servo)
-    # Nota: Si el teu servo esquerra és positiu, posa sentit anti-horari (per defecte o 1)
-    # Si el teu servo dreta és positiu, posa sentit horari (-1)
-
-    ax.set_rlabel_position(0)
-    ax.set_ylim(0, MAX_DISTANCE)
-    ax.set_title("Radar Frontal", va='bottom')
-
-    # Dibuixem l'àrea detectada (com un radar sòlid)
-    # Afegim el punt (0,0) al polígon per tancar-lo correctament cap a l'origen si volem
-    # Però fill() ja ho fa bé en polar.
-
-    ax.fill(angles_rad, distances, 'b', alpha=0.3) # Omplert blau translúcid
-    ax.plot(angles_rad, distances, 'b-')           # Línia de contorn
-    ax.plot(angles_rad, distances, 'ro', markersize=3) # Punts vermells per les mesures
-
-    # Limitem la vista als angles d'interès (-90 a 90 per tenir context frontal)
-    ax.set_thetamin(-90)
-    ax.set_thetamax(90)
-
-# Configuració de la finestra
+# Configuració inicial del gràfic
 fig = plt.figure(figsize=(8, 6))
 ax = fig.add_subplot(111, projection='polar')
 
+# Configuració dels eixos
+ax.set_theta_zero_location("N") # 0 graus al Nord (Frontal)
+ax.set_theta_direction(-1)      # -1 per sentit horari, 1 per anti-horari
+ax.set_rlabel_position(0)
+ax.set_ylim(0, MAX_DISTANCE)
+# Ajustem la vista als angles d'interès amb marge
+ax.set_thetamin(MIN_ANGLE - 10)
+ax.set_thetamax(MAX_ANGLE + 10)
+ax.set_title("Radar Frontal Pseudo-LIDAR", va='bottom')
+
+# Inicialitzem els gràfics
+# Guardem referències per actualitzar-los després
+line, = ax.plot(angles_rad, distances, 'b-') # Línia de contorn
+points, = ax.plot(angles_rad, distances, 'ro', markersize=3) # Punts de mesura
+
+# Fill retorna una llista de polígons, agafem el primer
+fill_poly_list = ax.fill(angles_rad, distances, 'b', alpha=0.3)
+fill_poly = fill_poly_list[0]
+
+def update_data():
+    global distances
+    # Llegim totes les línies disponibles al buffer
+    if ser and ser.is_open:
+        while ser.in_waiting > 0:
+            try:
+                line_str = ser.readline().decode('utf-8').strip()
+                if not line_str: continue
+
+                parts = line_str.split(',')
+                if len(parts) == 2:
+                    angle = int(parts[0])
+                    dist = int(parts[1])
+
+                    # Filtre de distància
+                    if dist > MAX_DISTANCE or dist <= 0:
+                        dist = MAX_DISTANCE
+
+                    # Busquem l'índex corresponent a l'angle rebut
+                    idx = np.where(angles_deg == angle)[0]
+
+                    if len(idx) > 0:
+                        distances[idx[0]] = dist
+
+            except ValueError:
+                pass # Ignorem línies malformades
+            except Exception as e:
+                print(f"Error llegint: {e}")
+
+def animate(i):
+    global fill_poly
+    update_data()
+
+    # Actualitzem les dades de la línia i els punts (eficient)
+    line.set_ydata(distances)
+    points.set_ydata(distances)
+
+    # Per l'àrea ombrejada (fill), l'estratègia més robusta és esborrar i recrear
+    try:
+        fill_poly.remove()
+    except ValueError:
+        pass # Si ja s'ha eliminat
+
+    # Creem el nou polígon omplert
+    fill_poly_list = ax.fill(angles_rad, distances, 'b', alpha=0.3)
+    fill_poly = fill_poly_list[0]
+
+    return line, points, fill_poly
+
 # Iniciem l'animació
-ani = FuncAnimation(fig, animate, interval=50) # Actualitza cada 50ms
+# interval=30ms per una visualització fluida (~30fps)
+ani = FuncAnimation(fig, animate, interval=30, blit=False)
 
 plt.show()
 
 # Tanquem el port en sortir
-if ser:
+if ser and ser.is_open:
     ser.close()
